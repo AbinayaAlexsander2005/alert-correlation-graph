@@ -1,0 +1,50 @@
+{
+  "_notice": "SYNTHETIC DATA – Academic student prototype. Not for production use.",
+  "_description": "Sample synthetic alerts for Alert-Correlation Graph prototype.",
+  "version": "v1.2-synthetic",
+  "generated": "2026-09-06T00:00:00Z",
+  "alerts": [
+    {
+      "id": "ALT-1001",
+      "timestamp": "2026-09-06T10:02:08Z",
+      "service": "Database",
+      "severity": "CRITICAL",
+      "source": "Prometheus",
+      "type": "Database Connection Timeout",
+      "metric": "db_connection_pool_available",
+      "value": 0,
+      "threshold": 5,
+      "incident": "INC-2026-014",
+      "status": "Correlated",
+      "synthetic": true
+    },
+    {
+      "id": "ALT-1003",
+      "timestamp": "2026-09-06T10:02:18Z",
+      "service": "Token Service",
+      "severity": "HIGH",
+      "source": "Datadog",
+      "type": "High Authentication Latency",
+      "metric": "token_service_latency_p99_ms",
+      "value": 487,
+      "threshold": 100,
+      "incident": "INC-2026-014",
+      "status": "Correlated",
+      "synthetic": true
+    },
+    {
+      "id": "ALT-1006",
+      "timestamp": "2026-09-06T10:02:26Z",
+      "service": "Identity API",
+      "severity": "CRITICAL",
+      "source": "Prometheus",
+      "type": "API 5xx Increase",
+      "metric": "identity_api_5xx_rate",
+      "value": 34,
+      "threshold": 5,
+      "incident": "INC-2026-014",
+      "status": "Correlated",
+      "synthetic": true
+    }
+  ]
+}
