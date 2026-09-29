@@ -15,28 +15,50 @@ Built as a student project for academic demonstration.
 
 ---
 
-## Features
+## Features & Capabilities
 
-| Page | Description |
-|------|-------------|
-| **Login** | Demo login screen (analyst / demo123) |
-| **Overview** | KPI cards, service health, activity feed |
-| **Alert Correlation** | Filterable alert table with Correlate button |
-| **Incident Explorer** | Expandable incident cards with root cause display |
-| **Dependency Graph** | SVG service topology with clickable nodes |
-| **Timeline** | Chronological incident event timeline |
-| **Audit Explanation** | Full provenance chain + export to JSON |
-| **Audit Trail** | Complete event log (system + analyst actions) |
-| **Change Review** | Approve / Reject / Rollback configuration changes |
-| **Evaluation** | Baseline vs prototype metrics + Edge Case Lab |
-| **Dataset & Privacy** | Data transparency and privacy statement |
-| **Settings** | Threshold sliders, version info |
+- **Real Correlation Engine (`src/engine/correlationEngine.js`)**: An active algorithmic backend running entirely in the browser that groups alerts into probable incidents using Temporal, Topological, and Entity rules.
+- **Root-Cause Analysis**: Identifies root-cause candidates using a scoring system based on topological downstream impact, severity, and temporal precedence, and extracts dependency paths via BFS.
+- **Noise Suppression**: Detects exact duplicates and suppresses singleton noise, providing a measurable "alert reduction" metric.
+- **Evaluation Runner (`src/engine/evaluationRunner.js`)**: Computes objective metrics (True Positives, Precision, Recall, F1 Score) by matching engine-detected incidents against ground-truth labels using an Intersection-over-Union (IoU) threshold of 0.3.
+- **Edge Case Lab (`src/engine/edgeCaseScenarios.js`)**: Runs three interactive, repeatable tests against the real engine to prove robustness:
+  1. **Cascade Failure**: Verifies a 4-service dependency chain groups into a single incident with the correct root cause.
+  2. **Disconnected Graphs**: Verifies alerts from unrelated services form separate incidents.
+  3. **False Correlation Prevention**: Verifies two low-severity alerts spaced beyond the temporal window are correctly suppressed as noise.
+- **Interactive UI**: Fully wired UI components including a live Dependency Graph highlighting active root causes, dynamic Incident Explorer, and Settings page linked directly to engine parameters.
 
-### Edge Cases Demonstrated
+---
 
-1. **Missing Telemetry** – INC-2026-011: trace gap causes incomplete evidence, confidence 31%
-2. **Conflicting Signals** – INC-2026-012: two equally-plausible root cause candidates
-3. **False Correlation Prevention** – FC-001: similar alerts correctly rejected (score 0.21 < threshold 0.70)
+## Algorithm Architecture
+
+The computational engine executes the following deterministic phases:
+
+1. **Preprocessing & Quality Check**: Validates incoming alerts, filtering out records with invalid timestamps or missing fields, generating a data quality report.
+2. **Duplicate Detection**: Identifies and suppresses exact duplicate alerts (same service, same type, same severity) occurring within a short 30-second window.
+3. **Graph Scoring (O(N²))**: Evaluates every pair of valid alerts, computing a composite score (max 1.0) based on:
+   - **Temporal Proximity (Max 0.35)**: Inverse-exponential decay based on time difference, up to the configurable `timeWindowMs`.
+   - **Topological Edge (Max 0.35)**: Breadth-first search determines if the two services share a direct (0.35) or transitive (0.20) dependency in the `topology.js` graph.
+   - **Entity Match (Max 0.35)**: Additional weight if alerts share the same service (0.20) or exact type (0.35).
+4. **Union-Find Clustering**: Groups alerts into Connected Components (incidents) where pairwise scores exceed the configurable `correlationThreshold` (default 0.70).
+5. **Noise Filtering**: Single-alert clusters (excluding primary duplicates) are classified as uncorrelated noise and excluded from analyst-facing incidents.
+6. **Root Cause Identification**: For each incident, scores candidate services based on:
+   - *Temporal*: Is it the earliest alert?
+   - *Severity*: Does it have critical errors?
+   - *Topology*: Does it have the most downstream impacted services within the cluster? (Extracted via BFS pathing).
+   Detects conflicting signals if secondary candidates score within 85% of the primary candidate.
+
+---
+
+## Evaluation Metrics & Formulas
+
+The `runEvaluationOnly()` function compares the Temporal+Topological engine against a greedy time-window-only baseline. 
+
+- **IoU Matching**: An engine incident matches a Ground Truth (GT) incident if:
+  `IoU = (EngineAlerts ∩ GTAlerts) / (EngineAlerts ∪ GTAlerts) ≥ 0.3`
+- **Precision**: `True Positives / (True Positives + False Positives)`
+- **Recall**: `True Positives / (True Positives + False Negatives)`
+- **F1 Score**: `2 * (Precision * Recall) / (Precision + Recall)`
+- **Alert Reduction %**: `(RawAlerts - EngineerFacingVolume) / RawAlerts * 100`
 
 ---
 
@@ -45,9 +67,8 @@ Built as a student project for academic demonstration.
 - **React 18** – UI framework
 - **Vite** – Build tool
 - **Tailwind CSS** – Styling
-- **React Router DOM** – Client-side routing
 - **Lucide React** – Icons
-- **No backend** – All data is local JavaScript/JSON
+- **Vanilla JS (ES6+)** – All algorithmic computation runs locally in the browser (no backend required).
 
 ---
 
@@ -55,49 +76,25 @@ Built as a student project for academic demonstration.
 
 ```
 alert-correlation-graph/
-├── public/
-│   ├── favicon.svg
-│   └── sample-dataset-alerts.json      ← Sample synthetic dataset
 ├── src/
-│   ├── components/
-│   │   ├── layout/
-│   │   │   ├── Layout.jsx              ← Main layout wrapper
-│   │   │   ├── Header.jsx              ← Top navigation bar
-│   │   │   └── Sidebar.jsx             ← Left sidebar navigation
-│   │   └── ui/
-│   │       └── index.jsx               ← Reusable UI components
+│   ├── engine/
+│   │   ├── correlationEngine.js        ← Core graph clustering & root cause algorithm
+│   │   ├── baselineEngine.js           ← Greedy time-window baseline
+│   │   ├── evaluationRunner.js         ← Metric computation (Precision/Recall/F1)
+│   │   └── edgeCaseScenarios.js        ← Real engine test suite (Cascade, Disconnected, etc.)
 │   ├── context/
-│   │   └── AppContext.jsx              ← Global state (auth, settings, audit)
+│   │   └── AppContext.jsx              ← Global state, engine runner, config
 │   ├── data/
-│   │   ├── alerts.js                   ← Synthetic alert records
-│   │   ├── incidents.js                ← Synthetic incident records
-│   │   ├── traces.js                   ← Synthetic traces, logs, evidence, timelines
-│   │   ├── topology.js                 ← Service dependency graph data
-│   │   ├── auditTrail.js               ← Pre-seeded audit trail events
-│   │   ├── changes.js                  ← Configuration change records
-│   │   └── evaluation.js               ← Evaluation metrics and edge cases
+│   │   ├── alerts.js                   ← 170 synthetic alerts + noise generation
+│   │   ├── topology.js                 ← Canonical service dependency graph
+│   │   └── ...                         ← Traces, audit trail, changes
 │   ├── pages/
-│   │   ├── LoginPage.jsx
-│   │   ├── OverviewPage.jsx
-│   │   ├── AlertCorrelationPage.jsx
-│   │   ├── IncidentExplorerPage.jsx
-│   │   ├── DependencyGraphPage.jsx
-│   │   ├── TimelinePage.jsx
-│   │   ├── ProvenancePage.jsx
-│   │   ├── AuditTrailPage.jsx
-│   │   ├── ChangeReviewPage.jsx
-│   │   ├── EvaluationPage.jsx
-│   │   ├── DatasetPage.jsx
-│   │   └── SettingsPage.jsx
-│   ├── App.jsx                         ← Routes + protected route logic
-│   ├── main.jsx                        ← React entry point
-│   └── index.css                       ← Global styles + Tailwind directives
-├── index.html
-├── package.json
-├── vite.config.js
-├── tailwind.config.js
-├── postcss.config.js
-└── README.md
+│   │   ├── AlertCorrelationPage.jsx    ← Live engine runner & results table
+│   │   ├── IncidentExplorerPage.jsx    ← Engine-generated incidents & RC analysis
+│   │   ├── DependencyGraphPage.jsx     ← Live topological RC highlighting
+│   │   ├── EvaluationPage.jsx          ← Computed metrics & Edge Case Lab
+│   │   └── SettingsPage.jsx            ← Live engine parameter controls
+│   └── components/ui/                  ← Shared Tailwind primitives
 ```
 
 ---
@@ -124,131 +121,26 @@ npm run dev
 
 The app will be available at **http://localhost:5173/alert-correlation-graph**
 
-### Demo Credentials
+### Testing the Engine
 
-```
-Username: analyst
-Password: demo123
-```
-
----
-
-## Building for Deployment
-
-### Build for production
-
-```bash
-npm run build
-```
-
-This creates a `dist/` folder with optimised static files.
-
-### Preview the production build locally
-
-```bash
-npm run preview
-```
-
----
-
-## Deploying to GitHub Pages
-
-### Option 1 – Manual deploy
-
-1. Build the project:
-   ```bash
-   npm run build
-   ```
-
-2. Push the `dist/` folder to the `gh-pages` branch:
-   ```bash
-   # Install gh-pages tool
-   npm install -g gh-pages
-
-   # Deploy
-   gh-pages -d dist
-   ```
-
-### Option 2 – Using the `gh-pages` npm package
-
-1. Add to `package.json` scripts:
-   ```json
-   "scripts": {
-     "deploy": "npm run build && gh-pages -d dist"
-   }
-   ```
-
-2. Run:
-   ```bash
-   npm run deploy
-   ```
-
-### Option 3 – GitHub Actions (recommended)
-
-Create `.github/workflows/deploy.yml`:
-
-```yaml
-name: Deploy to GitHub Pages
-on:
-  push:
-    branches: [main]
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      - run: npm install
-      - run: npm run build
-      - uses: peaceiris/actions-gh-pages@v3
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./dist
-```
-
----
-
-## Pushing to GitHub
-
-```bash
-# Initialise git (if not already done)
-git init
-git add .
-git commit -m "Initial commit: Alert-Correlation Graph prototype"
-
-# Create a new repository on github.com, then:
-git remote add origin https://github.com/<your-username>/alert-correlation-graph.git
-git branch -M main
-git push -u origin main
-```
-
-> **Note**: The `vite.config.js` has `base: '/alert-correlation-graph/'` pre-configured for GitHub Pages.
-> If your repository is named differently, update the `base` value accordingly.
-
----
-
-## Synthetic Dataset
-
-Sample dataset files are included in `public/`:
-- `sample-dataset-alerts.json` – Example alert records
-
-All data files in `src/data/` are JavaScript modules exporting synthetic records.
+1. Log in using demo credentials (`analyst` / `demo123`)
+2. Navigate to **Evaluation** and click **Run Evaluation** to compute live metrics against the baseline.
+3. Click **Run Scenarios** in the Edge Case Lab to execute the test suite against the live engine.
+4. Navigate to **Dependency Graph** and click **Refresh Engine** to see root causes and topological dependency paths highlighted dynamically.
 
 ---
 
 ## Academic Disclaimer
 
-This prototype was developed as a student project to demonstrate the concept of alert correlation and root-cause analysis for enterprise identity services. It is **not** a production-ready system.
+This prototype was developed as a student project to demonstrate the algorithmic concept of alert correlation and root-cause analysis for enterprise identity services.
 
-- All service names, incident IDs, timestamps, and metrics are fictional
-- No real monitoring systems, APIs, or infrastructure is connected
-- The correlation logic is simulated in the frontend only
-- Evaluation results are synthetic and illustrative
+- All service names, incident IDs, timestamps, and data are **synthetic**.
+- No real monitoring systems, APIs, or infrastructure are connected.
+- The engine processes a fixed synthetic dataset purely on the client-side.
 
 ---
 
 ## License
 
 MIT – Free for academic and educational use.
+
